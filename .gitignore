@@ -10,3 +10,7 @@ notebooks/
 outputs/
 website/
 Untitled*.ipynb
+
+!data/
+data/*
+!data/app/

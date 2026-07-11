@@ -11,15 +11,15 @@ st.set_page_config(page_title="CFB Spread Model", layout="wide")
 
 @st.cache_data
 def load():
-    games = pd.read_parquet("data/processed/demo_games.parquet")
-    feats = pd.read_parquet("data/processed/team_features.parquet")
+    games = pd.read_parquet("data/app/demo_games.parquet")
+    feats = pd.read_parquet("data/app/team_features.parquet")
     try:
-        logos = pd.read_parquet("data/processed/team_logos.parquet")
+        logos = pd.read_parquet("data/app/team_logos.parquet")
         logo_map = dict(zip(logos["team"], logos["logo"]))
     except FileNotFoundError:
         logo_map = {}
     try:
-        sched = pd.read_parquet("data/processed/schedule_2026.parquet")
+        sched = pd.read_parquet("data/app/schedule_2026.parquet")
     except FileNotFoundError:
         sched = None
     return games, feats, logo_map, sched
