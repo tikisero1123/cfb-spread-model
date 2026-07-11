@@ -178,3 +178,118 @@ def fetch_conferences(years):
             if team and conf:
                 rows.append((y, team, conf))
     return pd.DataFrame(rows, columns=["season", "team", "conference"])
+
+
+def fetch_lines_history(years):
+    """Betting lines per game per provider from /lines. Keeps opener and
+    closer where the provider reports both. Spread is from the home team's
+    perspective (negative = home favored), matching CFBD convention."""
+    import pandas as pd
+    rows = []
+    for y in years:
+        for g in _get("/lines", {"year": y}):
+            gid = _pick(g, "id", "gameId")
+            for ln in (g.get("lines") or []):
+                rows.append({
+                    "game_id": gid,
+                    "season": _pick(g, "season"),
+                    "week": _pick(g, "week"),
+                    "home_team": _pick(g, "homeTeam", "home_team"),
+                    "away_team": _pick(g, "awayTeam", "away_team"),
+                    "provider": _pick(ln, "provider"),
+                    "spread_close": _pick(ln, "spread"),
+                    "spread_open": _pick(ln, "spreadOpen", "spread_open"),
+                    "total_close": _pick(ln, "overUnder", "over_under"),
+                    "total_open": _pick(ln, "overUnderOpen", "over_under_open"),
+                })
+    df = pd.DataFrame(rows)
+    for c in ["spread_close", "spread_open", "total_close", "total_open"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df.drop_duplicates(subset=["game_id", "provider"]).reset_index(drop=True)
+    return df
+
+
+def fetch_team_logos():
+    """Team -> logo URL from /teams (ESPN-hosted images)."""
+    import pandas as pd
+    rows = []
+    for t in _get("/teams", {}):
+        team = t.get("school") or t.get("team")
+        logos = t.get("logos") or []
+        if team and logos:
+            rows.append((team, logos[0]))
+    return pd.DataFrame(rows, columns=["team", "logo"])
+
+
+def fetch_schedule(year, weeks=None):
+    """Scheduled games for a season from /games (regular season)."""
+    import pandas as pd
+    rows = []
+    for g in _get("/games", {"year": year, "seasonType": "regular"}):
+        wk = _pick(g, "week")
+        if weeks and wk not in weeks:
+            continue
+        rows.append({
+            "game_id": _pick(g, "id", "gameId"),
+            "season": year,
+            "week": wk,
+            "home_team": _pick(g, "homeTeam", "home_team"),
+            "away_team": _pick(g, "awayTeam", "away_team"),
+            "start_date": _pick(g, "startDate", "start_date"),
+        })
+    return pd.DataFrame(rows)
+
+
+def fetch_team_logos():
+    """Team -> logo URL from /teams (ESPN-hosted images)."""
+    import pandas as pd
+    rows = []
+    for t in _get("/teams", {}):
+        team = t.get("school") or t.get("team")
+        logos = t.get("logos") or []
+        if team and logos:
+            rows.append((team, logos[0]))
+    return pd.DataFrame(rows, columns=["team", "logo"])
+
+
+def fetch_schedule(year, weeks=None):
+    """Scheduled games for a season from /games (regular season)."""
+    import pandas as pd
+    rows = []
+    for g in _get("/games", {"year": year, "seasonType": "regular"}):
+        wk = _pick(g, "week")
+        if weeks and wk not in weeks:
+            continue
+        rows.append({
+            "game_id": _pick(g, "id", "gameId"),
+            "season": year,
+            "week": wk,
+            "home_team": _pick(g, "homeTeam", "home_team"),
+            "away_team": _pick(g, "awayTeam", "away_team"),
+            "start_date": _pick(g, "startDate", "start_date"),
+        })
+    return pd.DataFrame(rows)
+
+
+def fetch_lines_market(years):
+    """Per-game market snapshot from /lines: spread, total, moneylines.
+    Uses current/closing values -- for future games these are the live numbers."""
+    import pandas as pd
+    rows = []
+    for y in years:
+        for g in _get("/lines", {"year": y}):
+            gid = _pick(g, "id", "gameId")
+            for ln in (g.get("lines") or []):
+                rows.append({
+                    "game_id": gid,
+                    "provider": _pick(ln, "provider"),
+                    "lines_home": _pick(g, "homeTeam", "home_team"),
+                    "spread": _pick(ln, "spread"),
+                    "total": _pick(ln, "overUnder", "over_under"),
+                    "ml_home": _pick(ln, "homeMoneyline", "home_moneyline"),
+                    "ml_away": _pick(ln, "awayMoneyline", "away_moneyline"),
+                })
+    df = pd.DataFrame(rows)
+    for c in ["spread", "total", "ml_home", "ml_away"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df.drop_duplicates(subset=["game_id", "provider"]).reset_index(drop=True)

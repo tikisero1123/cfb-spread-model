@@ -98,7 +98,3 @@ notebooks/      exploration
   move margins. Rating seven position groups for every team every week is a lot
   of subjective labor that has to be logged before kickoff to stay leak-free.
   Prove you will keep it current before expanding it.
-
-## Demo app
-
-`python3 -m streamlit run app.py` -- split-screen matchup explorer: point-in-time team stats, model prediction vs Bovada open/close, cover probability with calibration caveats, and the 2026 schedule with a preseason talent prior. Requires the data files built by the notebooks.
