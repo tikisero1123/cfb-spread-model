@@ -1,12 +1,17 @@
-"""CFB Spread Model -- matchup explorer + 2026 preseason schedule.
+"""CFB Spread Model -- matchup explorer, 2026 schedule, and pick'em demo.
 Historical numbers are out-of-sample (point-in-time features, walk-forward
-predictions). 2026 shows a preseason talent prior only -- the full model
-needs in-season data. Run:  python3 -m streamlit run app.py
+predictions). 2026 shows posted market lines, fair-value moneylines derived
+from them, and a preseason talent prior once published.
+Run:  python3 -m streamlit run app.py
 """
+from statistics import NormalDist
+
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="CFB Spread Model", layout="wide")
+
+SIGMA = 16.2  # SD of realized margins around a prediction; stable 2023-25
 
 
 @st.cache_data
@@ -45,11 +50,44 @@ def logo_header(container, team_name, side_label):
     nc.caption(side_label)
 
 
+def fav_spread_label(home, away, spread):
+    """'Notre Dame -20.5' style, regardless of home/away."""
+    fav = home if spread < 0 else away
+    return f"{fav} {-abs(spread):.1f}"
+
+
+def fair_ml(p):
+    """Fair American odds from a win probability (no vig)."""
+    if p > 0.5:
+        return f"{-round(100 * p / (1 - p)):+d}"
+    return f"+{round(100 * (1 - p) / p)}"
+
+
 # ================= 2026 MODE =================
 if mode == "2026 schedule":
-    st.caption("2026 regular season, Weeks 4-13. The full model activates once "
-               "Weeks 1-3 provide point-in-time data; until then the only honest "
-               "signal is the preseason talent composite.")
+    st.caption("2026 regular season, Weeks 1-16. Posted lines are current market "
+               "numbers via CFBD and move before kickoff. The full model activates "
+               "once Weeks 1-3 provide point-in-time data; until then the only "
+               "honest signal is the preseason talent composite.")
+
+    with st.sidebar:
+        st.header("Your picks")
+        if st.button("Clear all picks"):
+            for k in [k for k in st.session_state if str(k).startswith("pick|")]:
+                del st.session_state[k]
+        label_map = st.session_state.setdefault("pick_labels", {})
+        slip = []
+        for k, v in st.session_state.items():
+            if str(k).startswith("pick|") and isinstance(v, str) and v != "No pick":
+                slip.append((label_map.get(k, ""), v))
+        if slip:
+            for game_lbl, choice in sorted(slip):
+                st.markdown(f"**{choice}**  \n{game_lbl}")
+            st.caption(f"{len(slip)} pick(s). Classic pick'em is 5 per week -- "
+                       "picks live for this browser session (demo; no accounts yet).")
+        else:
+            st.caption("No picks yet. Choose a game and make your calls.")
+
     sub = st.radio("Pick by", ["Week", "Team"], horizontal=True, key="sub26")
     c1, c2 = st.columns(2)
     if sub == "Week":
@@ -67,33 +105,97 @@ if mode == "2026 schedule":
                        axis=1)
     pick = c2.selectbox("Game", label)
     row = pool[label == pick].iloc[0]
+    gid = str(row["game_id"])
+    game_lbl = f"Wk {row['week']}: {row['away_team']} @ {row['home_team']}"
 
     left, right = st.columns(2, gap="large")
     logo_header(left, row["home_team"], "HOME")
     logo_header(right, row["away_team"], "AWAY")
-    if "talent_h" in row.index:
+    if "talent_h" in row.index and pd.notna(row.get("talent_h")):
         left.metric("Talent composite (z)", f"{row['talent_h']:+.2f}",
                     delta=round(row["talent_h"] - row["talent_a"], 2))
         right.metric("Talent composite (z)", f"{row['talent_a']:+.2f}",
                      delta=round(row["talent_a"] - row["talent_h"], 2))
+
     st.divider()
-    if "spread" in row.index and pd.notna(row["spread"]):
-        fav = row["home_team"] if row["spread"] < 0 else row["away_team"]
-        st.metric("Posted spread", f"{fav} {-abs(row['spread']):.1f}",
-                  help=f"Current market number via {row['spread_provider']} (CFBD). "
-                       "Early lines move a lot before kickoff.")
-    if "prior_margin" in row.index:
+
+    def has(col):
+        return col in row.index and pd.notna(row[col])
+
+    any_market = False
+    mcols = st.columns(3)
+
+    if has("spread"):
+        any_market = True
+        with mcols[0]:
+            st.markdown(f"**Spread: {fav_spread_label(row['home_team'], row['away_team'], row['spread'])}**")
+            key = f"pick|{gid}|spread"
+            st.radio("Who covers?",
+                     ["No pick",
+                      f"{row['home_team']} {row['spread']:+.1f}",
+                      f"{row['away_team']} {-row['spread']:+.1f}"],
+                     key=key)
+            st.session_state["pick_labels"][key] = game_lbl
+    if has("ml_home") and has("ml_away"):
+        any_market = True
+        with mcols[1]:
+            st.markdown("**Moneyline (win outright)**")
+            key = f"pick|{gid}|ml"
+            st.radio("Who wins?",
+                     ["No pick",
+                      f"{row['home_team']} ML ({int(row['ml_home']):+d})",
+                      f"{row['away_team']} ML ({int(row['ml_away']):+d})"],
+                     key=key)
+            st.session_state["pick_labels"][key] = game_lbl
+    if has("total"):
+        any_market = True
+        with mcols[2]:
+            st.markdown(f"**Total: {row['total']:.1f}**")
+            key = f"pick|{gid}|total"
+            st.radio("Over or under?",
+                     ["No pick",
+                      f"Over {row['total']:.1f}",
+                      f"Under {row['total']:.1f}"],
+                     key=key)
+            st.session_state["pick_labels"][key] = game_lbl
+
+    if any_market:
+        st.caption(f"Lines via {row.get('spread_provider', 'CFBD')} (CFBD). "
+                   "Early lines move a lot before kickoff.")
+    else:
+        st.info("No book has posted lines for this game yet -- markets appear "
+                "here as they open.")
+
+    # ---- fair-value moneylines derived from the posted spread ----
+    if has("spread"):
+        p_home = 1 - NormalDist().cdf(row["spread"] / SIGMA)
+        st.divider()
+        f1, f2 = st.columns(2)
+        f1.metric(f"Fair moneyline: {row['home_team']}", fair_ml(p_home),
+                  help=f"Derived from the spread with a normal margin model "
+                       f"(sigma = {SIGMA} points of CFB game variance). No vig -- "
+                       f"a book's posted number is shaded toward the house.")
+        f2.metric(f"Fair moneyline: {row['away_team']}", fair_ml(1 - p_home))
+        if has("ml_home") and has("ml_away"):
+            st.caption(f"Market moneylines for comparison: {row['home_team']} "
+                       f"{int(row['ml_home']):+d} / {row['away_team']} "
+                       f"{int(row['ml_away']):+d}. The gap vs fair value is the "
+                       f"book's vig plus any disagreement about the game.")
+
+    if has("my_spread"):
+        st.metric("Tiki's line",
+                  fav_spread_label(row["home_team"], row["away_team"], row["my_spread"]),
+                  delta=(f"{row['my_spread'] - row['spread']:+.1f} vs market"
+                         if has("spread") else "no market line yet"),
+                  help="Manually handicapped before kickoff; committed to git "
+                       "for timestamping. Graded against closes and results "
+                       "after each week.")
+
+    if has("prior_margin"):
         st.metric("Preseason prior: predicted home margin",
                   f"{row['prior_margin']:+.1f}",
-                  help="Talent + home field only, trained on 2022-24. "
+                  help="Talent + home field only, trained on 2022-25. "
                        "NOT the full model.")
-        st.info("This is a preseason prior, not a prediction against a line. "
-                "In-season efficiency features -- and any market comparison -- "
-                "begin Week 4 of 2026.")
-    else:
-        st.info("2026 talent composites aren't published yet -- schedule browsing "
-                "only. The preseason prior appears automatically once 247Sports "
-                "talent data lands (re-run the schedule cell in the eval notebook).")
     st.stop()
 
 # ================= HISTORICAL MODES =================
@@ -150,16 +252,17 @@ away_vals = team_panel(right, row["away_team"], home_vals, "AWAY")
 st.divider()
 m1, m2, m3 = st.columns(3)
 m1.metric("Model: predicted home margin", f"{row['model_margin']:+.1f}")
-m2.metric("Bovada close (home spread)", f"{row['bov_close']:+.1f}",
-          delta=f"opened {row['bov_open']:+.1f}")
+m2.metric("Bovada close",
+          fav_spread_label(row["home_team"], row["away_team"], row["bov_close"]),
+          delta=f"opened {row['bov_open']:+.1f} (home)")
 m3.metric("Model's P(home covers)", f"{row['p_cover']:.0%}",
           help=f"Normal approximation, walk-forward sigma = {row['sigma']:.1f} points")
 
 if abs(row["p_cover"] - 0.5) > 0.15:
     st.info("Caution: this is a high-confidence disagreement with the closing "
-            "line -- the calibration analysis shows these invert (they hit ~44%, "
-            "not 70%). Big model-vs-close gaps usually mean the model is missing "
-            "something.")
+            "line -- the calibration analysis (2023-25) shows these invert: the "
+            "model's ~71% picks cover about 47% of the time. Big model-vs-close "
+            "gaps usually mean the model is missing something.")
 
 with st.expander("Reveal the actual result"):
     margin = row["margin"]
