@@ -14,7 +14,7 @@ st.set_page_config(page_title="CFB Spread Model", layout="wide")
 SIGMA = 16.2  # SD of realized margins around a prediction; stable 2023-25
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load():
     games = pd.read_parquet("data/app/demo_games.parquet")
     feats = pd.read_parquet("data/app/team_features.parquet")
