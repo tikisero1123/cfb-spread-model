@@ -9,3 +9,4 @@ streamlit
 supabase
 streamlit-cookies-controller
 streamlit-cookies-controller
+streamlit-cookies-controller
