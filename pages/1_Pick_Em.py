@@ -83,28 +83,45 @@ else:
 
     market = st.radio("Market", ["spread", "ml"], horizontal=True,
                       format_func=lambda m: "Against the spread (-110)" if m == "spread"
-                      else "Moneyline (Bovada odds)")
+                      else "Moneyline")
     if market == "ml" and (pd.isna(row.get("ml_home")) or pd.isna(row.get("ml_away"))):
         st.warning("No moneyline posted for this game yet -- spread only.")
         market = "spread"
 
     book = "bovada"
-    if market == "spread" and has_tiki:
+    if has_tiki:
         book = st.radio("Book (which line, which wallet)", ["bovada", "tiki"],
                         horizontal=True,
-                        format_func=lambda b: "Bovada line" if b == "bovada" else "Tiki's line")
+                        format_func=lambda b: "Bovada" if b == "bovada" else "Tiki's book")
     line_used = row["my_spread"] if (market == "spread" and book == "tiki") else row["spread"]
 
     if market == "spread":
         opts = {f"{row['home_team']} {line_used:+.1f}": "home",
                 f"{row['away_team']} {-line_used:+.1f}": "away"}
+    elif book == "tiki":
+        oh = P.tiki_ml_odds(row["my_spread"], "home")
+        oa = P.tiki_ml_odds(row["my_spread"], "away")
+        opts = {f"{row['home_team']} {oh:+d} (Tiki fair odds)": "home",
+                f"{row['away_team']} {oa:+d} (Tiki fair odds)": "away"}
     else:
         opts = {f"{row['home_team']} {int(row['ml_home']):+d}": "home",
                 f"{row['away_team']} {int(row['ml_away']):+d}": "away"}
     side = opts[st.radio("Your side", list(opts.keys()))]
 
-    stake = st.number_input("Stake ($10$-$20$)", min_value=10.0,
-                            max_value=20.0, value=10.0, step=5.0)
+    stake = st.number_input("Stake ($5$-$20$)", min_value=5.0,
+                            max_value=20.0, value=10.0, step=1.0)
+
+    # live odds + payout preview for the selected bet
+    if market == "spread":
+        odds_used = P.SPREAD_PRICE
+    elif book == "tiki":
+        odds_used = P.tiki_ml_odds(row["my_spread"], side)
+    else:
+        odds_used = int(row["ml_home"] if side == "home" else row["ml_away"])
+    ret = P.american_payout(stake, odds_used)
+    st.markdown(f"**Odds: {odds_used:+d}**  \u00b7  risk \\${stake:,.0f}\\$ "
+                f"to win \\${ret - stake:,.2f}\\$ \u00b7 returns \\${ret:,.2f}\\$ if it hits")
+
     if st.button("Place pick"):
         try:
             P.place_pick(row, SEASON, wk, market, side, stake, book)

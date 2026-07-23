@@ -3,10 +3,30 @@ import streamlit as st
 from supabase import create_client
 
 MIN_WEEKLY = 5     # picks needed to qualify for the week
-MIN_STAKE = 10
+MIN_STAKE = 5
 MAX_STAKE = 20
 MAX_WEEKLY = 20   # hard cap (also enforced by a DB trigger)
 SPREAD_PRICE = -110
+SIGMA = 16.2  # SD of margins around a line; same value the main app uses
+
+
+def _phi(x):
+    from math import erf, sqrt
+    return 0.5 * (1 + erf(x / sqrt(2)))
+
+
+def prob_to_american(p):
+    p = min(max(p, 0.02), 0.98)  # clamp so odds stay sane on huge spreads
+    if p >= 0.5:
+        return -int(round(100 * p / (1 - p)))
+    return int(round(100 * (1 - p) / p))
+
+
+def tiki_ml_odds(my_spread, side):
+    """Fair-value (no-vig) moneyline implied by Tiki's home-perspective spread."""
+    p_home = _phi(-float(my_spread) / SIGMA)
+    p = p_home if side == "home" else 1 - p_home
+    return prob_to_american(p)
 START_BALANCE = 1000  # per wallet
 
 
@@ -99,9 +119,11 @@ def place_pick(row, season, week, market, side, stake, book="bovada"):
         line = row["my_spread"] if book == "tiki" else row["spread"]
         pick["line"] = float(line)
         pick["odds"] = SPREAD_PRICE
-    else:  # moneyline is bovada-only
-        pick["book"] = "bovada"
-        pick["odds"] = int(row["ml_home"] if side == "home" else row["ml_away"])
+    else:  # moneyline: bovada uses market odds, tiki uses fair odds from Tiki's spread
+        if book == "tiki":
+            pick["odds"] = tiki_ml_odds(row["my_spread"], side)
+        else:
+            pick["odds"] = int(row["ml_home"] if side == "home" else row["ml_away"])
 
     c = _client()
     c.table("picks").insert(pick).execute()
