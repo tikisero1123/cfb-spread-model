@@ -34,23 +34,28 @@ NICE = {c: c.replace("_pit", "").replace("_", " ").title() for c in PIT_COLS}
 
 st.title("College Football Spread Model")
 
-with st.expander("What do these stats mean?"):
+with st.sidebar.expander("📖 Stat definitions"):
     st.markdown(
-        "**PPA (predicted points added)** -- average expected points a team adds "
-        "per play, based on down, distance, and field position. The offensive "
-        "version is what the offense creates; the defensive version is what the "
-        "defense *allows*, so lower is better.\n\n"
-        "**Success rate** -- share of plays that stay on schedule (roughly half "
-        "the needed yards on 1st down, 70% on 2nd, all of it on 3rd/4th). "
-        "Consistency, not size: how often you win a down.\n\n"
-        "**Explosiveness** -- average PPA on *successful* plays only: chunk-play "
-        "ability. High success + low explosiveness = methodical; the reverse = "
-        "boom-or-bust. Defensive explosiveness is chunk plays allowed -- lower "
-        "means when you lose a down, you lose it small.\n\n"
-        "**Points for / against** -- plain scoring averages.\n\n"
-        "**Rule of thumb:** every *Off* stat and Points For, higher is better; "
-        "every *Def* stat and Points Against, lower is better. All numbers are "
-        "*point-in-time* -- only what was knowable entering that game.")
+        "**Off PPA** -- predicted points added per play by the offense: how much "
+        "each snap moves expected points, given down, distance, and field "
+        "position. Higher is better.\n\n"
+        "**Def PPA** -- PPA *allowed* per play by the defense. Lower is better.\n\n"
+        "**Off success rate** -- share of offensive plays that stay on schedule "
+        "(half the needed yards on 1st down, 70% on 2nd, all on 3rd/4th). "
+        "Consistency: how often the offense wins a down. Higher is better.\n\n"
+        "**Def success rate** -- share of opponent plays allowed to stay on "
+        "schedule. Lower is better.\n\n"
+        "**Off explosiveness** -- average PPA on *successful* plays only: "
+        "chunk-play ability. High success + low explosiveness = methodical; "
+        "the reverse = boom-or-bust.\n\n"
+        "**Def explosiveness** -- chunk plays *allowed*. Lower means when the "
+        "defense loses a down, it loses it small.\n\n"
+        "**Points for / against** -- scoring averages per game, for and "
+        "allowed.\n\n"
+        "**Rule of thumb:** every *Off* stat and Points For -- higher is "
+        "better. Every *Def* stat and Points Against -- lower is better.\n\n"
+        "All numbers are *point-in-time*: only what was knowable entering "
+        "that game, prior weeks only.")
 
 modes = ["2023-25 by week", "2023-25 by team"]
 if SCHED is not None:
