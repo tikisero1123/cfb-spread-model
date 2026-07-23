@@ -166,21 +166,24 @@ if mode == "2026 schedule":
         st.info("No book has posted lines for this game yet -- markets appear "
                 "here as they open.")
 
-    # ---- fair-value moneylines derived from the posted spread ----
-    if has("spread"):
-        p_home = 1 - NormalDist().cdf(row["spread"] / SIGMA)
+    # ---- moneylines: Ball Knowledge priced from our line when we have one,
+    # otherwise fair value from the posted market spread ----
+    ml_src = row["my_spread"] if has("my_spread") else (row["spread"] if has("spread") else None)
+    if ml_src is not None:
+        label = "Ball Knowledge moneyline" if has("my_spread") else "Fair moneyline (from market spread)"
+        p_home = 1 - NormalDist().cdf(ml_src / SIGMA)
         st.divider()
         f1, f2 = st.columns(2)
-        f1.metric(f"Fair moneyline: {row['home_team']}", fair_ml(p_home),
-                  help=f"Derived from the spread with a normal margin model "
-                       f"(sigma = {SIGMA} points of CFB game variance). No vig -- "
-                       f"a book's posted number is shaded toward the house.")
-        f2.metric(f"Fair moneyline: {row['away_team']}", fair_ml(1 - p_home))
+        f1.metric(f"{label}: {row['home_team']}", fair_ml(p_home),
+                  help=f"No-vig price implied by the "
+                       f"{'Ball Knowledge' if has('my_spread') else 'market'} spread "
+                       f"with a normal margin model (sigma = {SIGMA}).")
+        f2.metric(f"{label}: {row['away_team']}", fair_ml(1 - p_home))
         if has("ml_home") and has("ml_away"):
             st.caption(f"Market moneylines for comparison: {row['home_team']} "
                        f"{int(row['ml_home']):+d} / {row['away_team']} "
-                       f"{int(row['ml_away']):+d}. The gap vs fair value is the "
-                       f"book's vig plus any disagreement about the game.")
+                       f"{int(row['ml_away']):+d}. The gap is the book's vig "
+                       f"plus any disagreement about the game.")
 
     if has("my_spread"):
         st.metric("Ball Knowledge Inc line",
