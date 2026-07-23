@@ -188,6 +188,7 @@ def place_pick(row, season, week, market, side, stake, book="bovada"):
         "game_id": str(row["game_id"]),
         "home_team": row["home_team"], "away_team": row["away_team"],
         "market": market, "side": side, "stake": float(stake), "book": book,
+        "kickoff_at": str(row["start_date"]),
     }
     if market == "spread":
         line = row["my_spread"] if book == "tiki" else row["spread"]
