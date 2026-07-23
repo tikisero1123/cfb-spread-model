@@ -6,9 +6,12 @@ from streamlit_cookies_controller import CookieController
 _COOKIE = "pickem_session"
 
 
-@st.cache_resource
 def _cookies():
-    return CookieController()
+    # not @st.cache_resource: the controller renders a component, which
+    # Streamlit forbids inside cached functions (CachedWidgetWarning)
+    if "_cookie_ctl" not in st.session_state:
+        st.session_state["_cookie_ctl"] = CookieController()
+    return st.session_state["_cookie_ctl"]
 
 MIN_WEEKLY = 5     # picks needed to qualify for the week
 MIN_STAKE = 5
@@ -90,8 +93,7 @@ def sign_up(email, password, display_name):
     if res.session is None:
         # email confirmation is on: no session yet -- finish on first sign-in
         st.session_state["pending_display_name"] = display_name
-        raise RuntimeError("Account created! Check your email for a confirmation "
-                           "link, then use the Sign in tab.")
+        return "confirm"
     sb().postgrest.auth(res.session.access_token)
     sb().table("profiles").insert(
         {"id": res.user.id, "display_name": display_name}
@@ -99,6 +101,7 @@ def sign_up(email, password, display_name):
     st.session_state["user"] = {"id": res.user.id, "email": email,
                                 "token": res.session.access_token}
     _remember(res.session)
+    return "ok"
 
 
 def sign_in(email, password):
@@ -145,6 +148,22 @@ def american_payout(stake, odds):
     if odds < 0:
         return stake + stake * 100.0 / abs(odds)
     return stake + stake * odds / 100.0
+
+
+def cancel_pick(pick):
+    """Delete one of the user's OPEN picks and refund the stake to its wallet."""
+    u = current_user()
+    c = _client()
+    res = (c.table("picks").delete()
+           .eq("id", pick["id"]).eq("user_id", u["id"]).eq("status", "open")
+           .execute())
+    if not res.data:
+        raise ValueError("pick could not be canceled (already settled?)")
+    wcol = wallet_col(pick.get("book") or "bovada")
+    prof = profile()
+    c.table("profiles").update(
+        {wcol: float(prof[wcol]) + float(pick["stake"])}
+    ).eq("id", u["id"]).execute()
 
 
 def wallet_col(book):

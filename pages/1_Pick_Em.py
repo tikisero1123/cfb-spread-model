@@ -37,7 +37,13 @@ if P.current_user() is None:
         p2 = st.text_input("Password (8+ characters)", type="password", key="up_p")
         if st.button("Create account"):
             try:
-                P.sign_up(e2, p2, n); st.rerun()
+                result = P.sign_up(e2, p2, n)
+                if result == "confirm":
+                    st.success("Account created! Check your email for a "
+                               "confirmation link, then come back and use "
+                               "the Sign in tab.")
+                else:
+                    st.rerun()
             except Exception as ex:
                 st.error(f"Sign-up failed: {ex}")
     st.stop()
@@ -169,3 +175,22 @@ if mine:
             "Result": icon.get(r["status"], "?"),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # cancel open picks before kickoff (refunds the stake)
+    kick = dict(zip(SCHED["game_id"].astype(str), SCHED["start_date"]))
+    cancellable = [r for r in mine if r["status"] == "open"
+                   and (kick.get(str(r["game_id"])) is None
+                        or kick[str(r["game_id"])] > now)]
+    if cancellable:
+        st.caption("Cancel an open pick (refunds the stake -- only before kickoff):")
+        for r in cancellable:
+            team = r["home_team"] if r["side"] == "home" else r["away_team"]
+            kind = "ML" if r["market"] == "ml" else "spread"
+            if st.button(f"Cancel: {team} {kind}, ${float(r['stake']):,.0f}$ back",
+                         key=f"cancel_{r['id']}"):
+                try:
+                    P.cancel_pick(r)
+                    st.success("Pick canceled, stake refunded.")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(str(ex))
