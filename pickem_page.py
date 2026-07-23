@@ -6,6 +6,16 @@ import pickslib as P
 
 st.title("Ball Knowledge Inc")
 st.caption("Play money. Real lines.")
+
+with st.expander("How it works"):
+    st.markdown(
+        "Two play-money wallets, \\$1,000\\$ each: the **Bovada book** uses "
+        "market lines, the **Ball Knowledge book** uses our own. Bet spreads at "
+        "-110 or moneylines at each book's price, \\$5\\$-\\$20\\$ a pick. "
+        "Place at least 5 picks in a week to qualify, 10 max. Lines lock the "
+        "moment you pick; you can cancel any pick for a full refund until its "
+        "game kicks off. Wallets settle after each week's games -- the "
+        "leaderboard ranks total bankroll.")
 st.caption("Free game. Two play-money wallets -- $1,000$ each for the Bovada book and the Ball Knowledge book; nothing here involves real wagering. "
            "Lines are captured at the moment you pick and never change afterward. "
            f"{P.MIN_WEEKLY} picks to qualify each week, {P.MAX_WEEKLY} max.")
@@ -182,15 +192,20 @@ if mine:
                    and (kick.get(str(r["game_id"])) is None
                         or kick[str(r["game_id"])] > now)]
     if cancellable:
-        st.caption("Cancel an open pick (refunds the stake -- only before kickoff):")
-        for r in cancellable:
+        def _desc(r):
             team = r["home_team"] if r["side"] == "home" else r["away_team"]
             kind = "ML" if r["market"] == "ml" else "spread"
-            if st.button(f"Cancel: {team} {kind}, ${float(r['stake']):,.0f}$ back",
-                         key=f"cancel_{r['id']}"):
-                try:
-                    P.cancel_pick(r)
-                    st.success("Pick canceled, stake refunded.")
-                    st.rerun()
-                except Exception as ex:
-                    st.error(str(ex))
+            bk = "BK" if r["book"] == "tiki" else "Bov"
+            return f"{team} {kind} ({bk}, ${float(r['stake']):,.0f}$)"
+        c1, c2 = st.columns([3, 1])
+        labels = {_desc(r): r for r in cancellable}
+        choice = c1.selectbox("Cancel a pick (refunds the stake, only before kickoff)",
+                              list(labels.keys()))
+        c2.markdown("<div style='height:1.75em'></div>", unsafe_allow_html=True)
+        if c2.button("Cancel pick"):
+            try:
+                P.cancel_pick(labels[choice])
+                st.success("Pick canceled, stake refunded.")
+                st.rerun()
+            except Exception as ex:
+                st.error(str(ex))
