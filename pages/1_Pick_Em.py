@@ -4,8 +4,9 @@ import streamlit as st
 from datetime import datetime, timezone
 import pickslib as P
 
-st.title("Pick'Em -- play money, real lines")
-st.caption("Free game. Two play-money wallets -- $1,000$ each for the Bovada book and the Tiki book; nothing here involves real wagering. "
+st.title("Ball Knowledge Inc")
+st.caption("Play money. Real lines.")
+st.caption("Free game. Two play-money wallets -- $1,000$ each for the Bovada book and the Ball Knowledge book; nothing here involves real wagering. "
            "Lines are captured at the moment you pick and never change afterward. "
            f"{P.MIN_WEEKLY} picks to qualify each week, {P.MAX_WEEKLY} max.")
 
@@ -45,7 +46,7 @@ prof = P.profile()
 with st.sidebar:
     st.subheader(prof["display_name"])
     st.metric("Bovada wallet", f"${prof['balance_bov']:,.0f}$")
-    st.metric("Tiki wallet", f"${prof['balance_tiki']:,.0f}$")
+    st.metric("Ball Knowledge Inc wallet", f"${prof['balance_tiki']:,.0f}$")
     if st.button("Sign out"):
         P.sign_out(); st.rerun()
 
@@ -79,20 +80,32 @@ else:
                 f"kickoff {row['start_date']:%a %b %d, %H:%M} UTC")
     if has_tiki:
         tfav = row["home_team"] if row["my_spread"] < 0 else row["away_team"]
-        st.markdown(f"**Tiki's spread: {tfav} {-abs(row['my_spread']):.1f}**")
+        st.markdown(f"**Ball Knowledge spread: {tfav} {-abs(row['my_spread']):.1f}**")
+
+    def _bov_ml_ok(r):
+        h, a = r.get("ml_home"), r.get("ml_away")
+        if pd.isna(h) or pd.isna(a):
+            return False
+        # junk sentinels (e.g. -100000) appear when books pull the ML on blowouts
+        return abs(float(h)) <= 20000 and abs(float(a)) <= 20000
 
     market = st.radio("Market", ["spread", "ml"], horizontal=True,
                       format_func=lambda m: "Against the spread (-110)" if m == "spread"
                       else "Moneyline")
-    if market == "ml" and (pd.isna(row.get("ml_home")) or pd.isna(row.get("ml_away"))):
-        st.warning("No moneyline posted for this game yet -- spread only.")
+    bov_ml_ok = _bov_ml_ok(row)
+    if market == "ml" and not bov_ml_ok and not has_tiki:
+        st.warning("Moneyline is off the board for this game -- spread only.")
         market = "spread"
 
     book = "bovada"
     if has_tiki:
-        book = st.radio("Book (which line, which wallet)", ["bovada", "tiki"],
-                        horizontal=True,
-                        format_func=lambda b: "Bovada" if b == "bovada" else "Tiki's book")
+        if market == "ml" and not bov_ml_ok:
+            st.info("Bovada's moneyline is off the board for this one -- Ball Knowledge book only.")
+            book = "tiki"
+        else:
+            book = st.radio("Book (which line, which wallet)", ["bovada", "tiki"],
+                            horizontal=True,
+                            format_func=lambda b: "Bovada" if b == "bovada" else "Ball Knowledge book")
     line_used = row["my_spread"] if (market == "spread" and book == "tiki") else row["spread"]
 
     if market == "spread":
@@ -101,8 +114,8 @@ else:
     elif book == "tiki":
         oh = P.tiki_ml_odds(row["my_spread"], "home")
         oa = P.tiki_ml_odds(row["my_spread"], "away")
-        opts = {f"{row['home_team']} {oh:+d} (Tiki fair odds)": "home",
-                f"{row['away_team']} {oa:+d} (Tiki fair odds)": "away"}
+        opts = {f"{row['home_team']} {oh:+d} (Ball Knowledge fair odds)": "home",
+                f"{row['away_team']} {oa:+d} (Ball Knowledge fair odds)": "away"}
     else:
         opts = {f"{row['home_team']} {int(row['ml_home']):+d}": "home",
                 f"{row['away_team']} {int(row['ml_away']):+d}": "away"}
@@ -135,6 +148,24 @@ if mine:
     st.divider()
     st.subheader("My picks this week")
     dfm = pd.DataFrame(mine)
-    show = dfm[["away_team", "home_team", "book", "market", "side", "line",
-                "odds", "stake", "status", "payout"]]
-    st.dataframe(show, use_container_width=True, hide_index=True)
+    icon = {"open": "\u23f3", "won": "\u2705", "lost": "\u274c", "push": "\u2796"}
+    rows = []
+    for _, r in dfm.iterrows():
+        team = r["home_team"] if r["side"] == "home" else r["away_team"]
+        if r["market"] == "spread":
+            ln = float(r["line"]) if r["side"] == "home" else -float(r["line"])
+            bet = f"{team} {ln:+.1f}"
+        else:
+            bet = f"{team} ML"
+        ret = P.american_payout(float(r["stake"]), int(r["odds"]))
+        paid = float(r.get("payout") or 0)
+        rows.append({
+            "Matchup": f"{r['away_team']} @ {r['home_team']}",
+            "Bet": bet,
+            "Book": "Ball Knowledge" if r["book"] == "tiki" else "Bovada",
+            "Odds": f"{int(r['odds']):+d}",
+            "Stake": f"${float(r['stake']):,.0f}$",
+            "Returns": f"${ret:,.2f}$" if r["status"] == "open" else f"${paid:,.2f}$",
+            "Result": icon.get(r["status"], "?"),
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
