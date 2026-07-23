@@ -1,11 +1,19 @@
 """Shared helpers for the play-money pick'em. Used by pages/1_Pick_Em.py."""
 import streamlit as st
 from supabase import create_client
+from streamlit_cookies_controller import CookieController
+
+_COOKIE = "pickem_session"
+
+
+@st.cache_resource
+def _cookies():
+    return CookieController()
 
 MIN_WEEKLY = 5     # picks needed to qualify for the week
 MIN_STAKE = 5
 MAX_STAKE = 20
-MAX_WEEKLY = 20   # hard cap (also enforced by a DB trigger)
+MAX_WEEKLY = 10   # hard cap (also enforced by a DB trigger)
 SPREAD_PRICE = -110
 SIGMA = 16.2  # SD of margins around a line; same value the main app uses
 
@@ -37,19 +45,60 @@ def sb():
 
 # ---------- auth ----------
 def current_user():
-    return st.session_state.get("user")
+    u = st.session_state.get("user")
+    if u:
+        return u
+    # try to restore a login from the browser cookie
+    try:
+        raw = _cookies().get(_COOKIE)
+        if raw and isinstance(raw, dict) and raw.get("rt"):
+            res = sb().auth.set_session(raw["at"], raw["rt"])
+            if res and res.user:
+                sb().postgrest.auth(res.session.access_token)
+                st.session_state["user"] = {"id": res.user.id,
+                                            "email": res.user.email,
+                                            "token": res.session.access_token}
+                _remember(res.session)
+                _ensure_profile(res.user.id)
+                return st.session_state["user"]
+    except Exception:
+        pass  # stale/invalid cookie -> just show the sign-in form
+    return None
+
+
+def _remember(session):
+    try:
+        _cookies().set(_COOKIE, {"at": session.access_token,
+                                 "rt": session.refresh_token},
+                       max_age=60 * 60 * 24 * 30)
+    except Exception:
+        pass
+
+
+def _ensure_profile(uid):
+    c = sb()
+    have = c.table("profiles").select("id").eq("id", uid).execute()
+    if not have.data:
+        name = st.session_state.pop("pending_display_name", None) or "player"
+        c.table("profiles").insert({"id": uid, "display_name": name}).execute()
 
 
 def sign_up(email, password, display_name):
     res = sb().auth.sign_up({"email": email, "password": password})
     if res.user is None:
         raise RuntimeError("sign-up failed")
+    if res.session is None:
+        # email confirmation is on: no session yet -- finish on first sign-in
+        st.session_state["pending_display_name"] = display_name
+        raise RuntimeError("Account created! Check your email for a confirmation "
+                           "link, then use the Sign in tab.")
     sb().postgrest.auth(res.session.access_token)
     sb().table("profiles").insert(
         {"id": res.user.id, "display_name": display_name}
     ).execute()
     st.session_state["user"] = {"id": res.user.id, "email": email,
                                 "token": res.session.access_token}
+    _remember(res.session)
 
 
 def sign_in(email, password):
@@ -57,10 +106,16 @@ def sign_in(email, password):
     sb().postgrest.auth(res.session.access_token)
     st.session_state["user"] = {"id": res.user.id, "email": email,
                                 "token": res.session.access_token}
+    _remember(res.session)
+    _ensure_profile(res.user.id)
 
 
 def sign_out():
     st.session_state.pop("user", None)
+    try:
+        _cookies().remove(_COOKIE)
+    except Exception:
+        pass
 
 
 def _client():
