@@ -36,7 +36,7 @@ def payout(stake, odds):
     return stake + stake * odds / 100.0
 
 
-credit, graded = {}, 0
+credit, graded = {}, 0   # credit keyed by (user_id, wallet_column)
 for p in open_picks:
     if p["game_id"] not in finals:
         continue  # game not final yet; grade on a later run
@@ -61,11 +61,12 @@ for p in open_picks:
 
     sb.table("picks").update({"status": status, "payout": pay}).eq("id", p["id"]).execute()
     if pay > 0:
-        credit[p["user_id"]] = credit.get(p["user_id"], 0.0) + pay
+        wcol = "balance_tiki" if p.get("book") == "tiki" else "balance_bov"
+        credit[(p["user_id"], wcol)] = credit.get((p["user_id"], wcol), 0.0) + pay
     graded += 1
 
-for uid, amt in credit.items():
-    bal = sb.table("profiles").select("balance").eq("id", uid).execute().data[0]["balance"]
-    sb.table("profiles").update({"balance": float(bal) + amt}).eq("id", uid).execute()
+for (uid, wcol), amt in credit.items():
+    bal = sb.table("profiles").select(wcol).eq("id", uid).execute().data[0][wcol]
+    sb.table("profiles").update({wcol: float(bal) + amt}).eq("id", uid).execute()
 
 print(f"graded {graded} picks, credited {len(credit)} users")

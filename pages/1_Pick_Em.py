@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pickslib as P
 
 st.title("Pick'Em -- play money, real lines")
-st.caption("Free game. Play-money balance only; nothing here involves real wagering. "
+st.caption("Free game. Two play-money wallets -- $1,000$ each for the Bovada book and the Tiki book; nothing here involves real wagering. "
            "Lines are captured at the moment you pick and never change afterward. "
            f"{P.MIN_WEEKLY} picks to qualify each week, {P.MAX_WEEKLY} max.")
 
@@ -44,7 +44,8 @@ if P.current_user() is None:
 prof = P.profile()
 with st.sidebar:
     st.subheader(prof["display_name"])
-    st.metric("Balance", f"{prof['balance']:,.0f}")
+    st.metric("Bovada wallet", f"${prof['balance_bov']:,.0f}$")
+    st.metric("Tiki wallet", f"${prof['balance_tiki']:,.0f}$")
     if st.button("Sign out"):
         P.sign_out(); st.rerun()
 
@@ -73,29 +74,40 @@ else:
     row = pool[label == game].iloc[0]
 
     fav = row["home_team"] if row["spread"] < 0 else row["away_team"]
-    st.markdown(f"**Spread: {fav} {-abs(row['spread']):.1f}**  \u00b7  "
+    has_tiki = pd.notna(row.get("my_spread"))
+    st.markdown(f"**Bovada spread: {fav} {-abs(row['spread']):.1f}**  \u00b7  "
                 f"kickoff {row['start_date']:%a %b %d, %H:%M} UTC")
+    if has_tiki:
+        tfav = row["home_team"] if row["my_spread"] < 0 else row["away_team"]
+        st.markdown(f"**Tiki's spread: {tfav} {-abs(row['my_spread']):.1f}**")
 
     market = st.radio("Market", ["spread", "ml"], horizontal=True,
                       format_func=lambda m: "Against the spread (-110)" if m == "spread"
-                      else "Moneyline (market odds)")
+                      else "Moneyline (Bovada odds)")
     if market == "ml" and (pd.isna(row.get("ml_home")) or pd.isna(row.get("ml_away"))):
         st.warning("No moneyline posted for this game yet -- spread only.")
         market = "spread"
 
+    book = "bovada"
+    if market == "spread" and has_tiki:
+        book = st.radio("Book (which line, which wallet)", ["bovada", "tiki"],
+                        horizontal=True,
+                        format_func=lambda b: "Bovada line" if b == "bovada" else "Tiki's line")
+    line_used = row["my_spread"] if (market == "spread" and book == "tiki") else row["spread"]
+
     if market == "spread":
-        opts = {f"{row['home_team']} {row['spread']:+.1f}": "home",
-                f"{row['away_team']} {-row['spread']:+.1f}": "away"}
+        opts = {f"{row['home_team']} {line_used:+.1f}": "home",
+                f"{row['away_team']} {-line_used:+.1f}": "away"}
     else:
         opts = {f"{row['home_team']} {int(row['ml_home']):+d}": "home",
                 f"{row['away_team']} {int(row['ml_away']):+d}": "away"}
     side = opts[st.radio("Your side", list(opts.keys()))]
 
-    stake = st.number_input("Stake (play money)", min_value=10.0,
-                            max_value=float(prof["balance"]), value=50.0, step=10.0)
+    stake = st.number_input("Stake ($10$-$20$)", min_value=10.0,
+                            max_value=20.0, value=10.0, step=5.0)
     if st.button("Place pick"):
         try:
-            P.place_pick(row, SEASON, wk, market, side, stake)
+            P.place_pick(row, SEASON, wk, market, side, stake, book)
             st.success("Pick placed and locked in.")
             st.rerun()
         except Exception as ex:
@@ -106,6 +118,6 @@ if mine:
     st.divider()
     st.subheader("My picks this week")
     dfm = pd.DataFrame(mine)
-    show = dfm[["away_team", "home_team", "market", "side", "line",
+    show = dfm[["away_team", "home_team", "book", "market", "side", "line",
                 "odds", "stake", "status", "payout"]]
     st.dataframe(show, use_container_width=True, hide_index=True)

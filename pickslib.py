@@ -2,10 +2,12 @@
 import streamlit as st
 from supabase import create_client
 
-MIN_WEEKLY = 5    # picks needed to qualify for the week
+MIN_WEEKLY = 5     # picks needed to qualify for the week
+MIN_STAKE = 10
+MAX_STAKE = 20
 MAX_WEEKLY = 20   # hard cap (also enforced by a DB trigger)
 SPREAD_PRICE = -110
-START_BALANCE = 1000
+START_BALANCE = 1000  # per wallet
 
 
 @st.cache_resource
@@ -70,12 +72,19 @@ def american_payout(stake, odds):
     return stake + stake * odds / 100.0
 
 
-def place_pick(row, season, week, market, side, stake):
-    """row: a schedule row with game_id, teams, spread, ml_home, ml_away."""
+def wallet_col(book):
+    return "balance_tiki" if book == "tiki" else "balance_bov"
+
+
+def place_pick(row, season, week, market, side, stake, book="bovada"):
+    """row: schedule row. book: 'bovada' or 'tiki' (which line + which wallet)."""
     u = current_user()
     prof = profile()
-    if stake > prof["balance"]:
-        raise ValueError("stake exceeds your balance")
+    if not (MIN_STAKE <= stake <= MAX_STAKE):
+        raise ValueError(f"stake must be between ${MIN_STAKE}$ and ${MAX_STAKE}$")
+    wcol = wallet_col(book)
+    if stake > prof[wcol]:
+        raise ValueError("stake exceeds that wallet's balance")
     existing = week_picks(season, week)
     if len(existing) >= MAX_WEEKLY:
         raise ValueError(f"weekly limit of {MAX_WEEKLY} picks reached")
@@ -84,16 +93,18 @@ def place_pick(row, season, week, market, side, stake):
         "user_id": u["id"], "season": int(season), "week": int(week),
         "game_id": str(row["game_id"]),
         "home_team": row["home_team"], "away_team": row["away_team"],
-        "market": market, "side": side, "stake": float(stake),
+        "market": market, "side": side, "stake": float(stake), "book": book,
     }
     if market == "spread":
-        pick["line"] = float(row["spread"])
+        line = row["my_spread"] if book == "tiki" else row["spread"]
+        pick["line"] = float(line)
         pick["odds"] = SPREAD_PRICE
-    else:
+    else:  # moneyline is bovada-only
+        pick["book"] = "bovada"
         pick["odds"] = int(row["ml_home"] if side == "home" else row["ml_away"])
 
     c = _client()
     c.table("picks").insert(pick).execute()
     c.table("profiles").update(
-        {"balance": float(prof["balance"]) - float(stake)}
+        {wcol: float(prof[wcol]) - float(stake)}
     ).eq("id", u["id"]).execute()
