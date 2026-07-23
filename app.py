@@ -183,7 +183,7 @@ if mode == "2026 schedule":
                        f"book's vig plus any disagreement about the game.")
 
     if has("my_spread"):
-        st.metric("Tiki's line",
+        st.metric("Ball Knowledge Inc line",
                   fav_spread_label(row["home_team"], row["away_team"], row["my_spread"]),
                   delta=(f"{row['my_spread'] - row['spread']:+.1f} vs market"
                          if has("spread") else "no market line yet"),
@@ -192,8 +192,8 @@ if mode == "2026 schedule":
                        "after each week.")
 
     if has("prior_margin"):
-        st.metric("Preseason prior: predicted home margin",
-                  f"{row['prior_margin']:+.1f}",
+        st.metric("Preseason prior: predicted spread",
+                  fav_spread_label(row["home_team"], row["away_team"], -row["prior_margin"]),
                   help="Talent + home field only, trained on 2022-25. "
                        "NOT the full model.")
     st.stop()
@@ -251,7 +251,9 @@ away_vals = team_panel(right, row["away_team"], home_vals, "AWAY")
 
 st.divider()
 m1, m2, m3 = st.columns(3)
-m1.metric("Model: predicted home margin", f"{row['model_margin']:+.1f}")
+m1.metric("Model: predicted spread",
+          fav_spread_label(row["home_team"], row["away_team"], -row["model_margin"]),
+          help="The line the model would set. Compare directly with the Bovada close.")
 m2.metric("Bovada close",
           fav_spread_label(row["home_team"], row["away_team"], row["bov_close"]),
           delta=f"opened {row['bov_open']:+.1f} (home)")
@@ -268,8 +270,10 @@ with st.expander("Reveal the actual result"):
     margin = row["margin"]
     winner = row["home_team"] if margin > 0 else row["away_team"]
     covered = margin > -row["bov_close"]
+    close_label = fav_spread_label(row["home_team"], row["away_team"], row["bov_close"])
+    cover_team = row["home_team"] if covered else row["away_team"]
     st.markdown(f"**Final: {winner} won by {abs(margin):.0f}.** "
-                f"Home margin {margin:+.0f} vs close {row['bov_close']:+.1f} -> "
-                f"home **{'covered' if covered else 'did not cover'}**.")
+                f"Against the close ({close_label}), "
+                f"**{cover_team} covered**.")
     st.markdown(f"Model error: {abs(margin - row['model_margin']):.1f} pts | "
                 f"Market error: {abs(margin - (-row['bov_close'])):.1f} pts")
